@@ -1,14 +1,10 @@
-from abc import ABC, abstractmethod
+import time
 from typing import Callable, Optional
 
+from xiaozhi.services.display.base_display import BaseDisplay
 
-class BaseDisplay(ABC):
-    """显示接口的抽象基类"""
 
-    def __init__(self):
-        self.current_volume = 70  # 默认音量
-
-    @abstractmethod
+class NoDisplay(BaseDisplay):
     def set_callbacks(
         self,
         press_callback: Optional[Callable] = None,
@@ -20,30 +16,23 @@ class BaseDisplay(ABC):
         auto_callback: Optional[Callable] = None,
         abort_callback: Optional[Callable] = None,
     ):
-        """设置回调函数"""
         pass
 
-    @abstractmethod
     def update_status(self, status: str):
-        """更新状态文本"""
         pass
 
-    @abstractmethod
     def update_text(self, text: str):
-        """更新TTS文本"""
         pass
 
-    @abstractmethod
     def update_emotion(self, emotion: str):
-        """更新表情"""
         pass
 
-    @abstractmethod
-    def start(self):
-        """启动显示"""
+    def start_update_threads(self):
         pass
 
-    @abstractmethod
     def on_close(self):
-        """关闭显示"""
         pass
+
+    def start(self):
+        while True:
+            time.sleep(1)
