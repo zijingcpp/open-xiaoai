@@ -12,7 +12,7 @@
 ## 下载固件
 
 你可以直接在 [Github Releases](https://github.com/idootop/open-xiaoai/releases) 页面下载打包好的固件：
-- [Xiaomi 智能音箱 Pro v1.56.19](https://github.com/idootop/open-xiaoai/releases/tag/OH2P_1.56.19)
+- [Xiaomi 智能音箱 Pro v1.56.31](https://github.com/idootop/open-xiaoai/releases/tag/OH2P_1.56.31)
 - [小爱音箱 Pro v1.88.206](https://github.com/idootop/open-xiaoai/releases/tag/LX06_1.88.206)
 
 > [!TIP]
@@ -30,7 +30,7 @@
 
 > [!CAUTION]
 > 当前支持的最新固件版本为：
-> - Xiaomi 智能音箱 Pro 👉 [v1.56.19](https://github.com/idootop/open-xiaoai/releases/tag/OH2P_1.56.19)
+> - Xiaomi 智能音箱 Pro 👉 [v1.56.31](https://github.com/idootop/open-xiaoai/releases/tag/OH2P_1.56.31)
 > - 小爱音箱 Pro 👉 [v1.88.206](https://github.com/idootop/open-xiaoai/releases/tag/LX06_1.88.206)
 >
 > 更新版本的固件可能存在变化，导致刷机失败，设备变砖，请自行评估风险。
@@ -66,13 +66,19 @@ SSH_PASSWORD=open-xiaoai
 - Docker：https://www.docker.com/get-started/
 
 > [!NOTE]
-> Windows 系统推荐使用 [Git Bash](https://git-scm.com/downloads) 终端运行。
-> 
-> CMD 和 PowerShell 终端需要调整下面命令中文件（夹）的实际路径。
+> Windows 系统请在 [Git Bash](https://git-scm.com/downloads) 终端中运行以下命令。
+
+> [!TIP]
+> 如果你是 Apple Silicon 芯片，请先在 Docker Desktop - Settings - General - Virtual Machine Options 中打开 Apple Virtual framework 选项，然后开启 `Use Rosetta for x86_64/amd64 emulation on Apple Silicon`
 
 ```shell
 # 使用 Docker 进行构建
-docker run -it --rm --env-file $(pwd)/.env -v $(pwd)/assets:/app/assets -v $(pwd)/patches:/app/patches idootop/open-xiaoai:latest
+docker run -it --rm \
+    --platform linux/amd64 \
+    --env-file $(pwd)/.env \
+    -v $(pwd)/assets:/app/assets \
+    -v $(pwd)/patches:/app/patches \
+    idootop/open-xiaoai:latest
 
 # ✅ 打包完成，固件文件已复制到 assets 目录...
 # /app/assets/mico_all_92db90ed6_1.88.197/root-patched.squashfs
