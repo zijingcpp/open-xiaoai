@@ -27,11 +27,19 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     rm -rf /var/lib/apt/lists/*
 
 # 3. 安装 Linaro Toolchain & Rust
-# 将下载和清理放在一层，减少体积
+# 使用本地工具链文件，减少网络依赖
+COPY gcc-linaro-7.5.0-2019.12-x86_64_arm-linux-gnueabihf.tar /tmp/gcc-linaro.tar
 RUN mkdir -p /opt/toolchain && \
-    curl -fSL https://releases.linaro.org/components/toolchain/binaries/latest-7/arm-linux-gnueabihf/gcc-linaro-7.5.0-2019.12-x86_64_arm-linux-gnueabihf.tar.xz | tar -xJ -C /opt/toolchain --strip-components=1 && \
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable && \
-    rustup target add armv7-unknown-linux-gnueabihf
+    tar -xf /tmp/gcc-linaro.tar -C /opt/toolchain --strip-components=1 && \
+    rm /tmp/gcc-linaro.tar && \
+    RUSTUP_DIST_SERVER=https://mirrors.tuna.tsinghua.edu.cn/rustup \
+    RUSTUP_UPDATE_ROOT=https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup \
+    curl --proto '=https' --tlsv1.2 -sSf https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup-init.sh | sh -s -- -y --default-toolchain stable && \
+    echo '[source.crates-io]' > /root/.cargo/config.toml && \
+    echo 'replace-with = "tuna"' >> /root/.cargo/config.toml && \
+    echo '[source.tuna]' >> /root/.cargo/config.toml && \
+    echo 'registry = "sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/"' >> /root/.cargo/config.toml && \
+    RUSTUP_DIST_SERVER=https://mirrors.tuna.tsinghua.edu.cn/rustup rustup target add armv7-unknown-linux-gnueabihf
 
 WORKDIR /app
 

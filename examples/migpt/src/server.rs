@@ -1,6 +1,7 @@
 use neon::prelude::Context;
 use neon::types::JsUint8Array;
 use open_xiaoai::base::{AppError, VERSION};
+use open_xiaoai::services::auth::{create_tls_acceptor, accept_tls};
 use open_xiaoai::services::connect::data::{Event, Request, Response, Stream};
 use open_xiaoai::services::connect::handler::MessageHandler;
 use open_xiaoai::services::connect::message::{MessageManager, WsStream};
@@ -9,29 +10,35 @@ use open_xiaoai::services::speaker::SpeakerManager;
 use open_xiaoai::utils::task::TaskManager;
 
 use serde_json::json;
+use std::path::Path;
 use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::accept_async;
 
 use crate::node::NodeManager;
 
+const CERTS_DIR: &str = "certs";
+
 pub struct AppServer;
 
 async fn test() -> Result<(), AppError> {
     SpeakerManager::play_text("已连接").await?;
-
-    // let _ = RPC::instance()
-    //     .call_remote("start_recording", None, None)
-    //     .await;
-
-    // let _ = RPC::instance().call_remote("start_play", None, None).await;
-
     Ok(())
 }
 
 impl AppServer {
     pub async fn connect(stream: TcpStream) -> Result<WsStream, AppError> {
-        let ws_stream = accept_async(stream).await?;
-        Ok(WsStream::Server(ws_stream))
+        let server_p12 = format!("{}/server.p12", CERTS_DIR);
+        let ca_crt = format!("{}/ca.crt", CERTS_DIR);
+
+        if Path::new(&server_p12).exists() && Path::new(&ca_crt).exists() {
+            let acceptor = create_tls_acceptor(&server_p12, &ca_crt)?;
+            let tls_stream = accept_tls(&acceptor, stream).await?;
+            let ws_stream = accept_async(tls_stream).await?;
+            Ok(WsStream::ServerTls(ws_stream))
+        } else {
+            let ws_stream = accept_async(stream).await?;
+            Ok(WsStream::Server(ws_stream))
+        }
     }
 
     pub async fn run() {
@@ -39,19 +46,22 @@ impl AppServer {
         let listener = TcpListener::bind(&addr)
             .await
             .expect(format!("❌ 绑定地址失败: {}", &addr).as_str());
-        println!("✅ 已启动: {:?}", addr);
+
+        let tls_enabled = Path::new(&format!("{}/server.p12", CERTS_DIR)).exists();
+        let mode = if tls_enabled { "wss (mTLS)" } else { "ws" };
+        println!("✅ 已启动: {} {:?}", mode, addr);
+
         while let Ok((stream, addr)) = listener.accept().await {
-            // 同一时刻只处理一个连接
             AppServer::handle_connection(stream, addr).await;
         }
     }
 
     async fn handle_connection(stream: TcpStream, addr: std::net::SocketAddr) {
         let Ok(ws_stream) = AppServer::connect(stream).await else {
-            println!("❌ 连接异常: {}", addr);
+            println!("❌ 连接异常（TLS/WS 握手失败）: {}", addr);
             return;
         };
-        println!("✅ 已连接: {:?}", addr);
+        println!("✅ 已连接（已认证）: {:?}", addr);
         AppServer::init(ws_stream).await;
         if let Err(e) = MessageManager::instance().process_messages().await {
             println!("❌ 消息处理异常: {}", e);

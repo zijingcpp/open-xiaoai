@@ -19,7 +19,7 @@ DOWNLOAD_BASE_URL="https://gitee.com/idootop/artifacts/releases/download/open-xi
 
 WORK_DIR="/data/open-xiaoai"
 CLIENT_BIN="$WORK_DIR/client"
-SERVER_ADDRESS="ws://127.0.0.1:4399" # 默认不会连接到任何 server
+SERVER_ADDRESS="wss://127.0.0.1:4399" # 默认不会连接到任何 server
 
 if [ ! -d "$WORK_DIR" ]; then
     mkdir -p "$WORK_DIR"
@@ -28,6 +28,15 @@ fi
 if [ ! -f "$CLIENT_BIN" ]; then
     echo "🔥 正在下载 Client 端补丁程序..."
     curl -L -# -o "$CLIENT_BIN" "$DOWNLOAD_BASE_URL/client"
+    curl -L -# -o "$CLIENT_BIN.sha256" "$DOWNLOAD_BASE_URL/client.sha256"
+    if [ -f "$CLIENT_BIN.sha256" ]; then
+        cd "$WORK_DIR" && sha256sum -c client.sha256
+        if [ $? -ne 0 ]; then
+            rm -f "$CLIENT_BIN"
+            echo "❌ 校验失败，拒绝启动"
+            exit 1
+        fi
+    fi
     chmod +x "$CLIENT_BIN"
     echo "✅ Client 端补丁程序下载完毕"
 fi

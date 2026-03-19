@@ -15,18 +15,23 @@ use crate::utils::task::TaskManager;
 use super::data::{AppMessage, Event, Request, Response, Stream};
 use super::handler::MessageHandler;
 
+type TlsStream = tokio_openssl::SslStream<TcpStream>;
+
 pub enum WsStream {
     Server(WebSocketStream<TcpStream>),
+    ServerTls(WebSocketStream<TlsStream>),
     Client(WebSocketStream<MaybeTlsStream<TcpStream>>),
 }
 
 pub enum WsReader {
     Server(SplitStream<WebSocketStream<TcpStream>>),
+    ServerTls(SplitStream<WebSocketStream<TlsStream>>),
     Client(SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>),
 }
 
 pub enum WsWriter {
     Server(SplitSink<WebSocketStream<TcpStream>, Message>),
+    ServerTls(SplitSink<WebSocketStream<TlsStream>, Message>),
     Client(SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>),
 }
 
@@ -63,6 +68,11 @@ impl MessageManager {
                 self.reader.lock().await.replace(WsReader::Server(rx));
                 self.writer.lock().await.replace(WsWriter::Server(tx));
             }
+            WsStream::ServerTls(stream) => {
+                let (tx, rx) = stream.split();
+                self.reader.lock().await.replace(WsReader::ServerTls(rx));
+                self.writer.lock().await.replace(WsWriter::ServerTls(tx));
+            }
         }
         RPC::instance()
             .init(|request| async {
@@ -91,6 +101,7 @@ impl MessageManager {
         match writer {
             WsWriter::Client(w) => w.send(msg).await?,
             WsWriter::Server(w) => w.send(msg).await?,
+            WsWriter::ServerTls(w) => w.send(msg).await?,
         }
 
         Ok(())
@@ -121,29 +132,45 @@ impl MessageManager {
             return Err("WebSocket reader is not initialized".into());
         }
 
+        let mut ping_interval = tokio::time::interval(std::time::Duration::from_secs(15));
+        let mut last_activity = tokio::time::Instant::now();
+        let pong_timeout = std::time::Duration::from_secs(30);
+
         loop {
-            let next_msg = {
-                let mut reader = self.reader.lock().await;
-                match reader.as_mut() {
-                    None => break,
-                    Some(WsReader::Client(reader)) => reader.next().await,
-                    Some(WsReader::Server(reader)) => reader.next().await,
+            tokio::select! {
+                _ = ping_interval.tick() => {
+                    if last_activity.elapsed() > pong_timeout {
+                        return Err("heartbeat timeout".into());
+                    }
+                    let _ = self.send(Message::Ping(vec![].into())).await;
                 }
-            };
-            match next_msg {
-                None => break,
-                Some(Ok(Message::Close(_))) => break,
-                Some(Err(e)) => return Err(e.into()),
-                Some(Ok(msg)) => {
-                    match msg {
-                        Message::Text(text) => {
-                            let _ = self.on_text(text.to_string()).await;
+                next_msg = async {
+                    let mut reader = self.reader.lock().await;
+                    match reader.as_mut() {
+                        None => None,
+                        Some(WsReader::Client(reader)) => reader.next().await,
+                        Some(WsReader::Server(reader)) => reader.next().await,
+                        Some(WsReader::ServerTls(reader)) => reader.next().await,
+                    }
+                } => {
+                    match next_msg {
+                        None => break,
+                        Some(Ok(Message::Close(_))) => break,
+                        Some(Err(e)) => return Err(e.into()),
+                        Some(Ok(msg)) => {
+                            last_activity = tokio::time::Instant::now();
+                            match msg {
+                                Message::Text(text) => {
+                                    let _ = self.on_text(text.to_string()).await;
+                                }
+                                Message::Binary(bytes) => {
+                                    let _ = self.on_bytes(bytes.into()).await;
+                                }
+                                Message::Pong(_) | Message::Ping(_) => {}
+                                _ => {}
+                            };
                         }
-                        Message::Binary(bytes) => {
-                            let _ = self.on_bytes(bytes.into()).await;
-                        }
-                        _ => {}
-                    };
+                    }
                 }
             }
         }

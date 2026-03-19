@@ -1,6 +1,7 @@
 use crate::python::PythonManager;
 use open_xiaoai::base::{AppError, VERSION};
 use open_xiaoai::services::audio::config::AudioConfig;
+use open_xiaoai::services::auth::{create_tls_acceptor, accept_tls};
 use open_xiaoai::services::connect::data::{Event, Request, Response, Stream};
 use open_xiaoai::services::connect::handler::MessageHandler;
 use open_xiaoai::services::connect::message::{MessageManager, WsStream};
@@ -11,8 +12,11 @@ use pyo3::types::PyBytes;
 use pyo3::types::PyString;
 use pyo3::Python;
 use serde_json::json;
+use std::path::Path;
 use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::accept_async;
+
+const CERTS_DIR: &str = "certs";
 
 pub struct AppServer;
 
@@ -54,8 +58,20 @@ async fn test() -> Result<(), AppError> {
 
 impl AppServer {
     pub async fn connect(stream: TcpStream) -> Result<WsStream, AppError> {
-        let ws_stream = accept_async(stream).await?;
-        Ok(WsStream::Server(ws_stream))
+        let server_p12 = format!("{}/server.p12", CERTS_DIR);
+        let ca_crt = format!("{}/ca.crt", CERTS_DIR);
+
+        if Path::new(&server_p12).exists() && Path::new(&ca_crt).exists() {
+            // mTLS: TLS 握手（验证客户端证书） → WebSocket 握手
+            let acceptor = create_tls_acceptor(&server_p12, &ca_crt)?;
+            let tls_stream = accept_tls(&acceptor, stream).await?;
+            let ws_stream = accept_async(tls_stream).await?;
+            Ok(WsStream::ServerTls(ws_stream))
+        } else {
+            // 无 TLS（向后兼容）
+            let ws_stream = accept_async(stream).await?;
+            Ok(WsStream::Server(ws_stream))
+        }
     }
 
     pub async fn run() {
@@ -63,19 +79,22 @@ impl AppServer {
         let listener = TcpListener::bind(&addr)
             .await
             .expect(format!("❌ 绑定地址失败: {}", &addr).as_str());
-        crate::pylog!("✅ 已启动: {:?}", addr);
+
+        let tls_enabled = Path::new(&format!("{}/server.p12", CERTS_DIR)).exists();
+        let mode = if tls_enabled { "wss (mTLS)" } else { "ws" };
+        crate::pylog!("✅ 已启动: {} {:?}", mode, addr);
+
         while let Ok((stream, addr)) = listener.accept().await {
-            // 同一时刻只处理一个连接
             AppServer::handle_connection(stream, addr).await;
         }
     }
 
     async fn handle_connection(stream: TcpStream, addr: std::net::SocketAddr) {
         let Ok(ws_stream) = AppServer::connect(stream).await else {
-            crate::pylog!("❌ 连接异常: {}", addr);
+            crate::pylog!("❌ 连接异常（TLS/WS 握手失败）: {}", addr);
             return;
         };
-        crate::pylog!("✅ 已连接: {:?}", addr);
+        crate::pylog!("✅ 已连接（已认证）: {:?}", addr);
         AppServer::init(ws_stream).await;
         if let Err(e) = MessageManager::instance().process_messages().await {
             crate::pylog!("❌ 消息处理异常: {}", e);

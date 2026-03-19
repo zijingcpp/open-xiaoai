@@ -47,3 +47,11 @@ __pycache__
 .mi.json
 xiaozhi.json
 open-xiaoai.node
+
+# Security - certificates
+certs/
+
+# Large files
+*.squashfs
+*.tar
+*.tar.gz

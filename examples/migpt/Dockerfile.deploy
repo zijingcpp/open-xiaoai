@@ -1,0 +1,48 @@
+FROM ubuntu:22.04 AS builder
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+WORKDIR /app
+
+# 系统依赖
+RUN apt update && apt install -y curl build-essential pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+
+# 安装 Rust（清华镜像）
+ENV RUSTUP_DIST_SERVER=https://mirrors.tuna.tsinghua.edu.cn/rustup
+ENV RUSTUP_UPDATE_ROOT=https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Rust crates 镜像
+RUN mkdir -p /root/.cargo && printf '[source.crates-io]\nreplace-with = "tuna"\n[source.tuna]\nregistry = "sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/"\n' > /root/.cargo/config.toml
+
+# 安装 Node.js 22
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt install -y nodejs && rm -rf /var/lib/apt/lists/*
+RUN npm install -g corepack && corepack enable
+
+# 复制源码（保持目录结构）
+COPY packages/client-rust /app/packages/client-rust
+COPY examples/migpt /app/examples/migpt
+
+# 安装 Node 依赖 + 编译 Rust neon 模块
+WORKDIR /app/examples/migpt
+RUN corepack install && pnpm install
+RUN pnpm build
+
+# --- 运行阶段 ---
+FROM ubuntu:22.04 AS runner
+WORKDIR /app
+
+RUN apt update && apt install -y libssl3 ca-certificates && rm -rf /var/lib/apt/lists/*
+
+# Node.js
+RUN apt update && apt install -y curl && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt install -y nodejs && rm -rf /var/lib/apt/lists/*
+
+# 复制构建产物
+COPY --from=builder /app/examples/migpt/migpt /app/migpt
+COPY --from=builder /app/examples/migpt/package.json /app/package.json
+COPY --from=builder /app/examples/migpt/tsconfig.json /app/tsconfig.json
+COPY --from=builder /app/examples/migpt/node_modules /app/node_modules
+
+EXPOSE 4399
+
+CMD ["npx", "tsx", "migpt/index.ts"]
