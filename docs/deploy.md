@@ -70,28 +70,26 @@ docker save open-xiaoai-migpt:latest | gzip > /tmp/open-xiaoai-migpt.tar.gz
 
 ```bash
 # 上传镜像（替换 <HOST> 为你的 ssh 别名或 user@ip）
-scp /tmp/open-xiaoai-migpt.tar.gz <HOST>:~/open-xiaoai-migpt.tar.gz
+scp /tmp/open-xiaoai-migpt.tar.gz <HOST>:~/migpt-migpt.tar.gz
 
-# 上传证书
-ssh <HOST> "mkdir -p ~/open-xiaoai/certs"
-scp certs/server.p12 certs/ca.crt <HOST>:~/open-xiaoai/certs/
-
-# 上传配置文件
-scp examples/migpt/config.ts <HOST>:~/open-xiaoai/config.ts
+# 创建运行目录，上传证书和配置
+ssh <HOST> "mkdir -p ~/migpt/certs"
+scp certs/server.p12 certs/ca.crt <HOST>:~/migpt/certs/
+scp examples/migpt/config.ts <HOST>:~/migpt/config.ts
 ```
 
 ### 2.3 云端加载镜像
 
 ```bash
-ssh <HOST> "docker load < ~/open-xiaoai-migpt.tar.gz"
+ssh <HOST> "docker load < ~/migpt-migpt.tar.gz && rm -f ~/migpt-migpt.tar.gz"
 ```
 
 ### 2.4 修改配置
 
-在云主机上编辑 `~/open-xiaoai/config.ts`，填入你的 LLM API 配置：
+在云主机上编辑 `~/migpt/config.ts`，填入你的 LLM API 配置：
 
 ```bash
-ssh <HOST> "vi ~/open-xiaoai/config.ts"
+ssh <HOST> "vi ~/migpt/config.ts"
 ```
 
 需要修改的字段：
@@ -108,7 +106,7 @@ openai: {
 ### 2.5 启动 Server
 
 ```bash
-ssh <HOST> "cd ~/open-xiaoai && docker run -d \
+ssh <HOST> "cd ~/migpt && docker run -d \
   --name migpt \
   --network host \
   --restart unless-stopped \
@@ -159,12 +157,12 @@ docker build --network host \
 docker save open-xiaoai-migpt:latest | gzip > /tmp/open-xiaoai-migpt.tar.gz
 
 # 上传并替换
-scp /tmp/open-xiaoai-migpt.tar.gz <HOST>:~/open-xiaoai-migpt.tar.gz
-ssh <HOST> "docker load < ~/open-xiaoai-migpt.tar.gz"
+scp /tmp/open-xiaoai-migpt.tar.gz <HOST>:~/migpt-migpt.tar.gz
+ssh <HOST> "docker load < ~/migpt-migpt.tar.gz"
 
 # 重建容器
 ssh <HOST> "docker rm -f migpt"
-ssh <HOST> "cd ~/open-xiaoai && docker run -d \
+ssh <HOST> "cd ~/migpt && docker run -d \
   --name migpt \
   --network host \
   --restart unless-stopped \
@@ -288,8 +286,8 @@ echo "ws://192.168.x.x:4399" > /data/open-xiaoai/server.txt
 
 | 位置 | 文件 | 说明 |
 |------|------|------|
-| 云主机 `~/open-xiaoai/certs/` | `server.p12`, `ca.crt` | Server 证书 + CA（验证 Client） |
-| 云主机 `~/open-xiaoai/` | `config.ts` | LLM API 配置 |
+| 云主机 `~/migpt/certs/` | `server.p12`, `ca.crt` | Server 证书 + CA（验证 Client） |
+| 云主机 `~/migpt/` | `config.ts` | LLM API 配置 |
 | 音箱 `/data/open-xiaoai/certs/` | `client.p12`, `ca.crt` | Client 证书 + CA（验证 Server） |
 | 音箱 `/data/open-xiaoai/` | `server.txt` | Server 地址 |
 | 音箱 `/data/open-xiaoai/` | `client` | Client 二进制 |
