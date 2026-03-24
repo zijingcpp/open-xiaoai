@@ -8,6 +8,46 @@ export interface CommandResult {
   exit_code: number;
 }
 
+/**
+ * 清理文本，移除或替换 TTS 无法合成的字符
+ * - 移除 emoji
+ * - 移除 markdown 格式符号
+ * - 移除特殊符号
+ */
+function cleanTextForTTS(text: string): string {
+  if (!text) return "你好";
+
+  return (
+    text
+      // 移除 emoji (包括常见 Unicode emoji 范围)
+      .replace(
+        /[\u{1F600}-\u{1F64F}]|[\u{1F300}-\u{1F5FF}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]|[\u{1F900}-\u{1F9FF}]|[\u{1F018}-\u{1F270}]|[\u{238C}-\u{2454}]|[\u{20D0}-\u{20EF}]|[\u{FE0F}]|[\u{1F000}-\u{1F02F}]|[\u{1F0A0}-\u{1F0FF}]|[\u{1F100}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{1F700}-\u{1F77F}]|[\u{1F780}-\u{1F7FF}]|[\u{1F800}-\u{1F8FF}]|[\u{1F900}-\u{1F9FF}]|[\u{1FA00}-\u{1FA6F}]|[\u{1FA70}-\u{1FAFF}]/gu,
+        ""
+      )
+      // 移除 markdown 格式符号
+      .replace(/\*\*/g, "") // 粗体 **
+      .replace(/\*/g, "") // 斜体 *
+      .replace(/__/g, "") // 粗体 __
+      .replace(/_/g, "") // 斜体 _
+      .replace(/~~/g, "") // 删除线 ~~
+      .replace(/`{1,3}/g, "") // 行内代码 ` 和代码块 ```
+      .replace(/#{1,6}\s*/g, "") // 标题 #
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // 链接 [text](url) -> text
+      .replace(/!\[([^\]]*)\]\([^)]+\)/g, "") // 图片 ![alt](url)
+      // 移除分隔线和列表符号
+      .replace(/^---$/gm, "") // 分隔线 ---
+      .replace(/^[-*+]\s*/gm, "") // 无序列表 - * +
+      .replace(/^\d+\.\s*/gm, "") // 有序列表 1. 2.
+      // 移除其他特殊符号
+      .replace(/[_history=\d+]/g, "") // [_history=18] 这类标记
+      .replace(/\|/g, "") // 表格符号 |
+      .replace(/>/g, "") // 引用 >
+      .replace(/\n{3,}/g, "\n\n") // 多个空行合并为两个
+      // 清理多余空白
+      .trim()
+  );
+}
+
 class SpeakerManager implements ISpeaker {
   status: "playing" | "paused" | "idle" = "idle";
 
@@ -67,11 +107,14 @@ class SpeakerManager implements ISpeaker {
       return RustServer.on_output_data(bytes) as Promise<boolean>;
     }
 
+    // 清理文本中的特殊字符，确保 TTS 能正常合成
+    const cleanedText = text ? cleanTextForTTS(text) : "你好";
+
     if (blocking) {
       const res = await this.runShell(
         url
           ? `miplayer -f '${url}'`
-          : `/usr/sbin/tts_play.sh '${text || "你好"}'`,
+          : `/usr/sbin/tts_play.sh '${cleanedText}'`,
         { timeout }
       );
       return res?.exit_code === 0;
@@ -84,7 +127,7 @@ class SpeakerManager implements ISpeaker {
             type: 1,
           })}'`
         : `ubus call mibrain text_to_speech '${jsonEncode({
-            text: text || "你好",
+            text: cleanedText,
             save: 0,
           })}'`,
       { timeout }

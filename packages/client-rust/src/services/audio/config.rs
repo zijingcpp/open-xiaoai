@@ -17,8 +17,11 @@ pub static AUDIO_CONFIG: LazyLock<AudioConfig> = LazyLock::new(|| AudioConfig {
     channels: 1,
     bits_per_sample: 16,
     sample_rate: 16000,
-    period_size: 160,
-    buffer_size: 480,
+    // 增加缓冲区大小以避免音频播放时漏掉前面的内容
+    // period_size 从 160 增加到 1024
+    // buffer_size 从 480 增加到 4096
+    period_size: 1024,
+    buffer_size: 4096,
 });
 
 const PCM_WHITELIST: &[&str] = &["noop", "default"];
