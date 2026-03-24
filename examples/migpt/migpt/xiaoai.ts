@@ -6,6 +6,7 @@ import { RustServer } from "./open-xiaoai.js";
 import { OpenXiaoAISpeaker } from "./speaker.js";
 import { randomUUID } from "node:crypto";
 import { initSummary, summarizeMessages, getSummary, setSummary } from "./summary.js";
+import { initMemory, logMessage, getMemoryPrompt } from "./memory.js";
 
 export type OpenXiaoAIConfig = Prettify<EngineConfig<OpenXiaoAIEngine>>;
 
@@ -23,34 +24,32 @@ class OpenXiaoAIEngine extends MiGPTEngine {
     this._originalSystemPrompt = config.prompt?.system || "";
     this._maxHistory = config.context?.historyMaxLength || 10;
 
-    // 初始化摘要用的 LLM client
     if (config.openai) {
-      initSummary({
+      const llmConfig = {
         baseURL: config.openai.baseURL!,
         apiKey: config.openai.apiKey!,
         model: config.openai.model!,
-      });
+      };
+      initSummary(llmConfig);
+      initMemory(llmConfig);
     }
 
     await super.start(deepMerge(kDefaultOpenXiaoAIConfig, config));
-    // 注册全局回调函数
     (global as any).RUST_CALLBACKS = {
       on_event: this.onEvent,
       on_input_data: this.onRecord,
     };
-    // 启动服务
     console.log("✅ 服务已启动...");
     await RustServer.start();
   }
 
-  /**
-   * 重写 onMessage，注入摘要上下文
-   */
   async onMessage(msg: { text: string; id: string; sender: string; timestamp: number }) {
-    // 记录历史用于摘要
     this._history.push({ sender: msg.sender, text: msg.text });
 
-    // 历史满时，压缩前半部分为摘要
+    // 记录到每日日志（用于 23:30 持久化）
+    logMessage(msg.sender, msg.text);
+
+    // 会话内摘要压缩
     if (this._history.length >= this._maxHistory) {
       const half = Math.floor(this._history.length / 2);
       const old = this._history.slice(0, half);
@@ -67,25 +66,20 @@ class OpenXiaoAIEngine extends MiGPTEngine {
       }
     }
 
-    // 注入摘要到 system prompt
+    // 组装 system prompt：原始 + 持久记忆 + 会话摘要
+    const memoryPrompt = getMemoryPrompt();
     const summary = getSummary();
-    this.config.prompt = {
-      ...this.config.prompt,
-      system: summary
-        ? `${this._originalSystemPrompt}\n\n[之前的对话摘要] ${summary}`
-        : this._originalSystemPrompt,
-    };
+    let system = this._originalSystemPrompt;
+    if (memoryPrompt) system += `\n\n${memoryPrompt}`;
+    if (summary) system += `\n\n[之前的对话摘要] ${summary}`;
+    this.config.prompt = { ...this.config.prompt, system };
 
     await super.onMessage(msg);
   }
 
-  /**
-   * 收到事件
-   */
   onEvent = (event: string) => {
     const e = JSON.parse(event);
     if (e.event === "playing") {
-      // 更新播放状态
       OpenXiaoAISpeaker.status =
         e.data === "Playing"
           ? "playing"
@@ -93,7 +87,6 @@ class OpenXiaoAIEngine extends MiGPTEngine {
           ? "paused"
           : "idle";
     } else if (e.event === "instruction" && e.data.NewLine) {
-      // 收到语音识别结果
       const line = jsonDecode(e.data.NewLine);
       if (
         line?.header?.namespace === "SpeechRecognizer" &&
@@ -110,14 +103,10 @@ class OpenXiaoAIEngine extends MiGPTEngine {
         });
       }
     } else if (e.event === "kws") {
-      const keyword = e.data;
-      console.log("🔥 唤醒词识别", keyword);
+      console.log("🔥 唤醒词识别", e.data);
     }
   };
 
-  /**
-   * 收到录音音频流
-   */
   onRecord = (data: Uint8Array) => {
     console.log("🔥 收到录音音频流", data.length);
   };

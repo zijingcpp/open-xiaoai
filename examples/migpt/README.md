@@ -72,6 +72,42 @@ pnpm install
 pnpm dev
 ```
 
+## 新特性
+
+### 对话摘要压缩
+
+会话内自动管理上下文长度。当历史消息达到 `historyMaxLength` 上限时，自动将前半部分对话压缩为摘要注入 system prompt，既保留关键信息又控制 token 消耗。
+
+通过 `config.ts` 中的 `historyMaxLength` 配置上下文窗口大小：
+
+```typescript
+context: {
+  historyMaxLength: 10, // 保留最近 10 条消息，超出时自动压缩
+},
+```
+
+### 每日记忆持久化
+
+每天 23:30 自动触发，将当天的对话内容发送给 LLM 提取用户偏好和关键事实，以 JSON 格式持久化到 `/app/data/user-memory.json`。下次对话时自动注入 system prompt，实现跨会话的长期记忆。
+
+记忆文件示例：
+
+```json
+{
+  "facts": [
+    { "key": "family", "value": "家里有一个4岁的女儿", "updated": "2026-03-24" },
+    { "key": "music_pref", "value": "喜欢古典音乐", "updated": "2026-03-24" }
+  ],
+  "lastSummaryDate": "2026-03-24"
+}
+```
+
+> [!TIP]
+> 使用 Docker 部署时，需要挂载 `/app/data` 目录以持久化记忆数据：
+> ```bash
+> -v $(pwd)/data:/app/data
+> ```
+
 ## 注意事项
 
 1. 默认 Server 服务端口为 `4399`（比如 ws://192.168.31.227:4399），运行前请确保该端口未被其他程序占用。
