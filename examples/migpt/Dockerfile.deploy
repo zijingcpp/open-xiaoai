@@ -45,4 +45,6 @@ COPY --from=builder /app/examples/migpt/node_modules /app/node_modules
 
 EXPOSE 4399
 
+RUN mkdir -p /app/data
+
 CMD ["npx", "tsx", "migpt/index.ts"]

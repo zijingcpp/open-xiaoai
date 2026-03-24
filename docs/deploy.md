@@ -236,9 +236,15 @@ adb shell chmod +x /data/open-xiaoai/client
 
 ### 3.5 开机自启
 
+将 `packages/client-rust/boot.sh` 复制到 `/data/init.sh`，音箱开机时会自动执行该脚本：
+
 ```bash
-echo '/data/open-xiaoai/boot.sh &' >> /data/open-xiaoai/init.sh
+cp /data/open-xiaoai/boot.sh /data/init.sh
+chmod +x /data/init.sh
+reboot
 ```
+
+`boot.sh` 会自动读取 `/data/open-xiaoai/server.txt` 中的 Server 地址，kill 旧进程后在后台启动 Client。
 
 ## 4. 验证部署
 
