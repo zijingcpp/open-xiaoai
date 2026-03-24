@@ -3,6 +3,8 @@ import OpenAILib from "openai";
 
 const MEMORY_PATH = "/app/data/user-memory.json";
 
+const MAX_FACTS = 30;
+
 const EXTRACT_PROMPT = `你是一个记忆管理助手。根据今天的对话内容和已有的用户记忆，输出更新后的用户事实列表。
 
 规则：
@@ -11,6 +13,7 @@ const EXTRACT_PROMPT = `你是一个记忆管理助手。根据今天的对话�
 3. 如果某条旧记忆被明确否定，删除它
 4. 忽略闲聊、天气查询等无持久价值的内容
 5. 每条事实用一个 key（英文标识）和 value（中文描述）表示
+6. 最多保留 ${MAX_FACTS} 条最重要的事实，超出时淘汰最不重要的
 
 已有记忆：
 {existing}
@@ -54,6 +57,13 @@ function loadMemory(): MemoryData {
 
 function saveMemory(data: MemoryData) {
   writeFileSync(MEMORY_PATH, JSON.stringify(data, null, 2), "utf-8");
+}
+
+/** 清空所有记忆（持久文件 + 当日日志） */
+export function clearMemory() {
+  if (existsSync(MEMORY_PATH)) writeFileSync(MEMORY_PATH, JSON.stringify({ facts: [], lastSummaryDate: "" }, null, 2), "utf-8");
+  todayLog = [];
+  console.log("🧹 记忆已清空");
 }
 
 /** 记录一条对话 */
@@ -100,7 +110,14 @@ async function extractAndSave() {
       factMap.set(f.key, { key: f.key, value: f.value, updated: today });
     }
 
-    saveMemory({ facts: Array.from(factMap.values()), lastSummaryDate: today });
+    // 硬截断：超出上限时按更新时间淘汰最旧的
+    let facts = Array.from(factMap.values());
+    if (facts.length > MAX_FACTS) {
+      facts.sort((a, b) => b.updated.localeCompare(a.updated));
+      facts = facts.slice(0, MAX_FACTS);
+    }
+
+    saveMemory({ facts, lastSummaryDate: today });
     todayLog = [];
     console.log(`🧠 每日记忆已更新，共 ${factMap.size} 条`);
   } catch (e) {

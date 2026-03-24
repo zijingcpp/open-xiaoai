@@ -6,7 +6,7 @@ import { RustServer } from "./open-xiaoai.js";
 import { OpenXiaoAISpeaker } from "./speaker.js";
 import { randomUUID } from "node:crypto";
 import { initSummary, summarizeMessages, getSummary, setSummary } from "./summary.js";
-import { initMemory, logMessage, getMemoryPrompt } from "./memory.js";
+import { initMemory, logMessage, getMemoryPrompt, clearMemory } from "./memory.js";
 
 export type OpenXiaoAIConfig = Prettify<EngineConfig<OpenXiaoAIEngine>>;
 
@@ -19,6 +19,7 @@ class OpenXiaoAIEngine extends MiGPTEngine {
   private _originalSystemPrompt = "";
   private _history: { sender: string; text: string }[] = [];
   private _maxHistory = 10;
+  private _msgLock = Promise.resolve();
 
   async start(config: OpenXiaoAIConfig) {
     this._originalSystemPrompt = config.prompt?.system || "";
@@ -44,26 +45,13 @@ class OpenXiaoAIEngine extends MiGPTEngine {
   }
 
   async onMessage(msg: { text: string; id: string; sender: string; timestamp: number }) {
-    this._history.push({ sender: msg.sender, text: msg.text });
-
-    // 记录到每日日志（用于 23:30 持久化）
-    logMessage(msg.sender, msg.text);
-
-    // 会话内摘要压缩
-    if (this._history.length >= this._maxHistory) {
-      const half = Math.floor(this._history.length / 2);
-      const old = this._history.slice(0, half);
-      this._history = this._history.slice(half);
-
-      const prevSummary = getSummary();
-      const input = prevSummary
-        ? [{ sender: "system", text: `之前的摘要: ${prevSummary}` }, ...old]
-        : old;
-      const summary = await summarizeMessages(input);
-      if (summary) {
-        setSummary(summary);
-        console.log(`📝 对话摘要已更新: ${summary}`);
-      }
+    // 指令拦截：清除记忆
+    if (/清(除|空|理)记忆/.test(msg.text)) {
+      clearMemory();
+      setSummary("");
+      this._history = [];
+      await this.speaker.play({ text: "记忆已清空" });
+      return;
     }
 
     // 组装 system prompt：原始 + 持久记忆 + 会话摘要
@@ -74,7 +62,53 @@ class OpenXiaoAIEngine extends MiGPTEngine {
     if (summary) system += `\n\n[之前的对话摘要] ${summary}`;
     this.config.prompt = { ...this.config.prompt, system };
 
+    // 调用引擎（内部判断是否触发 LLM）
     await super.onMessage(msg);
+
+    // 摘要压缩（仅当有足够历史时）
+    if (this._history.length >= this._maxHistory) {
+      console.log(`📝 触发摘要压缩: _history=${this._history.length}, threshold=${this._maxHistory}`);
+      const half = Math.floor(this._history.length / 2);
+      const old = this._history.slice(0, half);
+      this._history = this._history.slice(half);
+
+      const prevSummary = getSummary();
+      const input = prevSummary
+        ? [{ sender: "system", text: `之前的摘要: ${prevSummary}` }, ...old]
+        : old;
+      const newSummary = await summarizeMessages(input);
+      if (newSummary) {
+        setSummary(newSummary);
+        console.log(`📝 对话摘要已更新: ${newSummary}`);
+      }
+    }
+  }
+
+  async askAI(msg: { text: string; id: string; sender: string; timestamp: number }) {
+    // 只有触发 LLM 的消息才记录到历史和每日日志
+    this._history.push({ sender: msg.sender, text: msg.text });
+    logMessage(msg.sender, msg.text);
+    console.log(`🔥 ${msg.text} [_history=${this._history.length}]`);
+
+    const reply = await super.askAI(msg);
+
+    // 监听流式回复，收集完整文本
+    if (reply.stream) {
+      const origRead = reply.stream.read.bind(reply.stream);
+      let fullText = "";
+      reply.stream.read = () => {
+        const result = origRead();
+        if (result.next) fullText += result.next;
+        if (result.noMore && fullText) {
+          this._history.push({ sender: "assistant", text: fullText });
+          console.log(`🔊 ${fullText.slice(0, 50)} [_history=${this._history.length}]`);
+          logMessage("assistant", fullText);
+        }
+        return result;
+      };
+    }
+
+    return reply;
   }
 
   onEvent = (event: string) => {
@@ -95,12 +129,14 @@ class OpenXiaoAIEngine extends MiGPTEngine {
         line?.payload?.results?.[0]?.text
       ) {
         const text = line.payload.results[0].text;
-        this.onMessage({
-          text,
-          id: randomUUID(),
-          sender: "user",
-          timestamp: Date.now(),
-        });
+        this._msgLock = this._msgLock.then(() =>
+          this.onMessage({
+            text,
+            id: randomUUID(),
+            sender: "user",
+            timestamp: Date.now(),
+          }).catch(e => console.error("❌ onMessage 异常:", e))
+        );
       }
     } else if (e.event === "kws") {
       console.log("🔥 唤醒词识别", e.data);

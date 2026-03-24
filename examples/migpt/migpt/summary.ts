@@ -4,7 +4,7 @@ let conversationSummary = "";
 let summaryClient: OpenAILib | null = null;
 let summaryModel = "";
 
-const SUMMARIZE_PROMPT = `请将以下对话内容压缩为一段简短的摘要，保留关键信息（用户偏好、重要事实、待办事项等），去掉闲聊和重复内容。只输出摘要，不要解释。`;
+const SUMMARIZE_PROMPT = `请将以下对话内容压缩为一段简短的摘要，保留关键信息（用户偏好、重要事实、待办事项等），去掉闲聊和重复内容。摘要不超过200字。只输出摘要，不要解释。`;
 
 export function initSummary(config: { baseURL: string; apiKey: string; model: string }) {
   summaryClient = new OpenAILib({ baseURL: config.baseURL, apiKey: config.apiKey });
