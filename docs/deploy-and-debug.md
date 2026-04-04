@@ -258,7 +258,39 @@ echo "ws://192.168.x.x:4399" > /data/open-xiaoai/server.txt
 - 吊销 Client：无 CRL 机制，需重新生成 CA 和所有证书
 - 有效期：默认 3650 天（10 年）
 
-## 7. 常见问题
+## 7. deploy.sh 一键部署脚本
+
+项目提供 `deploy.sh` 脚本，支持 Client 和 Server 的一键部署。
+
+### Client 命令
+
+```bash
+./deploy.sh build          # 交叉编译 client (ARMv7)
+./deploy.sh deploy         # 部署到音箱（含校验、备份、自动回滚）
+./deploy.sh all            # 编译 + 部署
+./deploy.sh rollback       # 回滚到上一版本
+./deploy.sh status         # 查看音箱状态（进程、磁盘、日志）
+./deploy.sh logs           # 实时查看音箱日志
+./deploy.sh ssh            # SSH 登录音箱
+```
+
+### Server 命令
+
+```bash
+./deploy.sh server-deploy  # 构建镜像 → 上传 → 重建容器（完整部署）
+./deploy.sh server-config  # 仅上传 config.ts 并重启（改配置用）
+./deploy.sh server-logs    # 实时查看 Server 日志
+```
+
+### 配置说明
+
+脚本顶部的 Server 配置项：
+- `SERVER_SSH_HOST`：云主机 SSH 别名（默认 `my-ali`，使用 `~/.ssh/config` 中的配置）
+- `SERVER_MIGPT_DIR`：云主机上的部署目录（默认 `~/migpt`）
+
+音箱密码保存在 `.xiaoai_pass` 文件中，首次运行时会提示输入。
+
+## 8. 常见问题
 
 | 问题 | 排查方法 |
 |------|----------|
@@ -270,7 +302,7 @@ echo "ws://192.168.x.x:4399" > /data/open-xiaoai/server.txt
 | 音箱无响应 | SSH 到音箱检查 client 进程：`ps \| grep client` |
 | 磁盘空间不足 | `docker image prune -f` |
 
-## 8. 文件清单
+## 9. 文件清单
 
 | 位置 | 文件 | 说明 |
 |------|------|------|

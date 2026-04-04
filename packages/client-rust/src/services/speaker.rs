@@ -140,12 +140,13 @@ impl SpeakerManager {
     }
 
     /// 中断运行
+    /// 中断运行（使用 mediaplayer stop，不破坏对话状态机）
     pub async fn abort_xiaoai() -> Result<bool, AppError> {
         const COMMAND: &str = r#"
-            /etc/init.d/mico_aivs_lab restart >/dev/null 2>&1
+            ubus call mediaplayer player_play_operation '{"action":"stop"}'
         "#;
         let res = SpeakerManager::run_shell(COMMAND).await?;
-        Ok(res.exit_code == 0)
+        Ok(res.stdout.contains("\"code\": 0"))
     }
 
     /// 唤醒

@@ -38,6 +38,14 @@ async fn on_output_data(bytes: Vec<u8>) -> bool {
         .is_ok()
 }
 
+#[neon::export]
+async fn set_block_nlp(enabled: bool) -> bool {
+    let res = RPC::instance()
+        .call_remote("set_block_nlp", Some(json!(enabled)), None)
+        .await;
+    res.is_ok()
+}
+
 #[neon::main]
 fn main(mut cx: ModuleContext) -> NeonResult<()> {
     let _ = neon::set_global_executor(&mut cx, runtime());

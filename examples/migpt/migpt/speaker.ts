@@ -43,9 +43,42 @@ function cleanTextForTTS(text: string): string {
       .replace(/\|/g, "") // 表格符号 |
       .replace(/>/g, "") // 引用 >
       .replace(/\n{3,}/g, "\n\n") // 多个空行合并为两个
+      // 数字和符号转中文（TTS 友好）
+      .replace(/(\d+)\s*℃/g, (_, n) => `${numberToChinese(n)}摄氏度`)
+      .replace(/(\d+)\s*°C/gi, (_, n) => `${numberToChinese(n)}摄氏度`)
+      .replace(/(\d+)\s*%/g, (_, n) => `百分之${numberToChinese(n)}`)
+      .replace(/(\d+)\s*km\/h/gi, (_, n) => `每小时${numberToChinese(n)}公里`)
+      .replace(/(\d+)-(\d+)/g, (_, a, b) => `${numberToChinese(a)}到${numberToChinese(b)}`)
+      .replace(/\d+/g, (n) => numberToChinese(n))
       // 清理多余空白
       .trim()
   );
+}
+
+/** 数字转中文口语（如 17 → 十七，2026 → 二零二六） */
+function numberToChinese(n: string): string {
+  const digits = "零一二三四五六七八九";
+  const num = parseInt(n);
+  if (isNaN(num)) return n;
+  if (num < 0) return `负${numberToChinese(String(-num))}`;
+  if (num < 10) return digits[num];
+  if (num < 100) {
+    const tens = Math.floor(num / 10);
+    const ones = num % 10;
+    return (tens === 1 ? "十" : digits[tens] + "十") + (ones ? digits[ones] : "");
+  }
+  if (num < 1000) {
+    const h = Math.floor(num / 100);
+    const rest = num % 100;
+    return digits[h] + "百" + (rest < 10 && rest > 0 ? "零" + digits[rest] : rest > 0 ? numberToChinese(String(rest)) : "");
+  }
+  if (num < 10000) {
+    const t = Math.floor(num / 1000);
+    const rest = num % 1000;
+    return digits[t] + "千" + (rest < 100 && rest > 0 ? "零" + numberToChinese(String(rest)) : rest > 0 ? numberToChinese(String(rest)) : "");
+  }
+  // 年份等大数字逐字读
+  return n.split("").map(d => digits[parseInt(d)] ?? d).join("");
 }
 
 class SpeakerManager implements ISpeaker {
@@ -150,7 +183,7 @@ class SpeakerManager implements ISpeaker {
     const { silent = true } = options ?? {};
     const command = awake
       ? silent
-        ? `ubus call pnshelper event_notify '{"src":1,"event":0}'`
+        ? `ubus call pnshelper event_notify '{"src":1,"event":0}'; miplayer -f /data/open-xiaoai/ding.mp3`
         : `ubus call pnshelper event_notify '{"src":0,"event":0}'`
       : `
         ubus call pnshelper event_notify '{"src":3, "event":7}'
@@ -185,15 +218,13 @@ class SpeakerManager implements ISpeaker {
   }
 
   /**
-   * 中断原来小爱的运行
-   *
-   * 注意：重启需要大约 1-2s 的时间，在此期间无法使用小爱音箱自带的 TTS 服务
+   * 使用 mediaplayer stop 打断 TTS 播放，不会破坏 mico_aivs_lab 的对话状态机
    */
   async abortXiaoAI() {
     const res = await this.runShell(
-      "/etc/init.d/mico_aivs_lab restart >/dev/null 2>&1"
+      "ubus call mediaplayer player_play_operation '{\"action\":\"stop\"}'"
     );
-    return res?.exit_code === 0;
+    return res?.stdout.includes('"code": 0');
   }
 
   /**
