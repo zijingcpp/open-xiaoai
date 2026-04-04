@@ -1,0 +1,73 @@
+import { sleep } from "@mi-gpt/utils";
+import { OpenXiaoAIConfig } from "./migpt/xiaoai.js";
+
+export const kOpenXiaoAIConfig: OpenXiaoAIConfig = {
+  /** ASR 防抖延迟（毫秒），等待用户说完再提交给 LLM */
+  asrDebounceMs: 800,
+  stream: {
+    // 增大分句长度，减少 TTS 合成次数，缩短句间间隔
+    maxReplyLength: 500,
+    // 只在问号、感叹号处断句（去掉句号，让多个短句合并）
+    sentenceEndings: "？！?!",
+  },
+  openai: {
+    /**
+     * 你的大模型服务提供商的接口地址
+     *
+     * 支持兼容 OpenAI 接口的大模型服务，比如：DeepSeek V3 等
+     *
+     * 注意：一般以 /v1 结尾，不包含 /chat/completions 部分
+     * - ✅ https://api.openai.com/v1
+     * - ❌ https://api.openai.com/v1/（最后多了一个 /
+     * - ❌ https://api.openai.com/v1/chat/completions（不需要加 /chat/completions）
+     */
+    baseURL: "https://api.openai.com/v1",
+    /**
+     * API 密钥
+     */
+    apiKey: "sk-your-api-key-here",
+    /**
+     * 模型名称
+     */
+    model: "gpt-4o-mini",
+  },
+  prompt: {
+    /**
+     * 系统提示词，如需关闭可设置为：''（空字符串）
+     */
+    system: "你是一个家庭智能助手。回答要简洁，每次回复控制在3句话以内。用纯文本格式回答，不要使用任何 Markdown 格式。当用户表达结束对话的意思时（如再见、不聊了、晚安、谢谢拜拜等），请在回复末尾加上 [EXIT] 标记。",
+  },
+  context: {
+    /**
+     * 每次对话携带的最大历史消息数（如需关闭可设置为：0）
+     */
+    historyMaxLength: 20,
+  },
+  /**
+   * 只回答以下关键词开头的消息：
+   *
+   * - 请问地球为什么是圆的？
+   * - 你知道世界上跑的最快的动物是什么吗？
+   */
+  callAIKeywords: ["请", "你"],
+  /**
+   * 自定义消息回复
+   */
+  async onMessage(engine, { text }) {
+    if (text === "测试播放文字") {
+      return { text: "你好，很高兴认识你！" };
+    }
+
+    if (text === "测试播放音乐") {
+      return { url: "https://example.com/hello.mp3" };
+    }
+
+    if (text === "测试其他能力") {
+      await engine.speaker.abortXiaoAI();
+      await sleep(2000);
+      await engine.speaker.play({ text: "你好，很高兴认识你！", blocking: true });
+      await engine.speaker.play({ url: "https://example.com/hello.mp3" });
+      return { handled: true };
+    }
+  },
+};

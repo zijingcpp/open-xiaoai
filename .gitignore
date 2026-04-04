@@ -55,3 +55,6 @@ certs/
 *.squashfs
 *.tar
 *.tar.gz
+
+# Private config with API keys
+examples/migpt/config.ts
